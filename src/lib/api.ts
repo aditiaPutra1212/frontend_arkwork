@@ -2,12 +2,13 @@
 
 /* ====================== Backend helper (admin & lainnya) ====================== */
 
-export const API_BASE =
+export const API_BASE: string =
   // dukung dua nama env, pilih salah satu yang ada
   process.env.NEXT_PUBLIC_API_URL ||
-  
+  process.env.NEXT_PUBLIC_API_BASE ||
+  'http://localhost:4000';
 
-type ApiOpts = RequestInit & {
+export type ApiOpts = RequestInit & {
   /** Jika diisi, otomatis method=POST dan body=JSON.stringify(json) */
   json?: any;
   /** Jika respons 204 No Content, default return null */
