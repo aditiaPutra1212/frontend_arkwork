@@ -6,7 +6,7 @@ import { api, API_BASE } from '@/lib/api'; // <-- pakai helper & base yang sama
 
 type Role = 'admin' | 'user';
 
-export type UserLite = {
+export type UserLite = {D
   id: string;
   email: string;
   name?: string | null;

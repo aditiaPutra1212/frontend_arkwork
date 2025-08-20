@@ -2,17 +2,35 @@
 
 /* ====================== Backend helper (admin & lainnya) ====================== */
 
-export const API_BASE: string =
-  // dukung dua nama env, pilih salah satu yang ada
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE ||
-  'http://localhost:4000';
+/**
+ * Basis URL backend yang dibaca dari env publik.
+ * Gunakan salah satu:
+ * - NEXT_PUBLIC_API_BASE  (disarankan)
+ * - NEXT_PUBLIC_API_URL   (fallback)
+ *
+ * Pastikan DI ISI di Vercel:
+ *   NEXT_PUBLIC_API_BASE = https://backend-arkwork-production.up.railway.app
+ */
+export const API_BASE: string = (
+  process.env.NEXT_PUBLIC_API_BASE ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  'http://localhost:4000'
+).replace(/\/+$/, ''); // buang trailing slash
+
+/** Gabungkan path menjadi URL absolut yang valid */
+export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${p}`;
+}
 
 export type ApiOpts = RequestInit & {
   /** Jika diisi, otomatis method=POST dan body=JSON.stringify(json) */
   json?: any;
   /** Jika respons 204 No Content, default return null */
   expectJson?: boolean; // default: true
+  /** Timeout (ms). Default 15000 */
+  timeoutMs?: number;
 };
 
 /**
@@ -22,32 +40,67 @@ export type ApiOpts = RequestInit & {
  *   const me = await api('/admin/me')
  */
 export async function api<T = any>(path: string, opts: ApiOpts = {}): Promise<T> {
-  const { json, headers, expectJson = true, ...rest } = opts;
+  const {
+    json,
+    headers,
+    expectJson = true,
+    timeoutMs = 15000,
+    ...rest
+  } = opts;
 
-  const init: RequestInit = {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(headers || {}),
-    },
-    ...(json !== undefined ? { method: rest.method ?? 'POST', body: JSON.stringify(json) } : {}),
-    ...rest,
-  };
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
 
-  const res = await fetch(`${API_BASE}${path}`, init);
+  try {
+    const init: RequestInit = {
+      credentials: 'include',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(headers || {}),
+      },
+      ...(json !== undefined
+        ? { method: rest.method ?? 'POST', body: JSON.stringify(json) }
+        : {}),
+      ...rest,
+    };
 
-  if (!res.ok) {
-    // coba ambil pesan error dari JSON; kalau gagal pakai fallback
-    let msg = `Request failed ${res.status}`;
-    try {
-      const data = await res.json();
-      msg = (data?.message || data?.error || msg);
-    } catch { /* ignore */ }
-    throw new Error(msg);
+    const res = await fetch(apiUrl(path), init);
+
+    if (!res.ok) {
+      // coba ambil pesan error JSON; kalau gagal, pakai fallback
+      let msg = `Request failed ${res.status}`;
+      try {
+        const data = await res.json();
+        msg = data?.message || data?.error || msg;
+      } catch {
+        // ignore
+      }
+      throw new Error(msg);
+    }
+
+    if (res.status === 204 || !expectJson) {
+      return null as unknown as T;
+    }
+
+    // aman: bila tidak JSON (jarang), fallback text
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      return (await res.json()) as T;
+    }
+    return (await res.text()) as unknown as T;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Network timeout. Coba lagi.');
+    }
+    // “Failed to fetch” / CORS / jaringan
+    if (typeof err?.message === 'string' && /Failed to fetch/i.test(err.message)) {
+      throw new Error('Tidak bisa menghubungi server. Cek koneksi atau CORS.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(t);
   }
-
-  if (res.status === 204 || !expectJson) return null as unknown as T;
-  return res.json() as Promise<T>;
 }
 
 /* ================== Energy News (Google News RSS → rss2json) ================= */
@@ -153,10 +206,7 @@ function mapItem(it: any): EnergyNewsItem {
   };
 }
 
-/**
- * Ambil berita energi dari Google News (via rss2json).
- * NOTE: Public API ini ada rate limit. Untuk produksi, pertimbangkan proxy/route server sendiri.
- */
+/** Ambil berita energi dari Google News (via rss2json). */
 export async function fetchEnergyNews(
   params: FetchEnergyNewsParams
 ): Promise<EnergyNewsResponse> {
@@ -170,7 +220,6 @@ export async function fetchEnergyNews(
   if (scope === 'global' || scope === 'both') {
     urls.push(buildGoogleNewsRssUrl({ q, lang: 'en', country: 'US' }));
   }
-  // Jika scope spesifik dan user menentukan lang/country lain, pakai itu saja
   if (
     scope !== 'both' &&
     !((scope === 'id' && lang === 'id' && country === 'ID') ||
@@ -185,9 +234,7 @@ export async function fetchEnergyNews(
   const items: EnergyNewsItem[] = [];
   for (const r of results) {
     if (r.status === 'fulfilled') {
-      for (const it of r.value.items ?? []) {
-        items.push(mapItem(it));
-      }
+      for (const it of r.value.items ?? []) items.push(mapItem(it));
     }
   }
 
