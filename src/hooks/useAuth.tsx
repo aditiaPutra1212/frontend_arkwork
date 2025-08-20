@@ -1,12 +1,11 @@
-// frontend/src/hooks/useAuth.tsx
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { api, API_BASE } from '@/lib/api'; // <-- pakai helper & base yang sama
+import { api } from '@/lib/api';
 
 type Role = 'admin' | 'user';
 
-export type UserLite = {D
+export type UserLite = {
   id: string;
   email: string;
   name?: string | null;
@@ -40,14 +39,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserLite | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Restore session
   useEffect(() => {
     (async () => {
       try {
-        const me: UserLite = await api('/auth/me');
+        const me: UserLite = await api('/auth/me', { timeoutMs: 12000 });
         setUser(me);
       } catch {
         try {
-          const adm = await api('/admin/me');
+          // fallback admin
+          const adm = await api('/admin/me', { timeoutMs: 12000 });
           const mapped: UserLite = {
             id: adm?.id || `admin:${adm?.username || 'unknown'}`,
             email: adm?.email || `${adm?.username || 'admin'}@local`,
@@ -64,8 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // email -> /auth/signin, selain itu -> /admin/signin
   const signin: AuthCtx['signin'] = async (identifier, password) => {
-    // email → /auth/signin, selain email → /admin/signin
     if (identifier.includes('@')) {
       const u: UserLite = await api('/auth/signin', { json: { email: identifier, password } });
       setUser(u);
@@ -94,8 +95,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signout = async () => {
-    try { await api('/auth/signout', { method: 'POST' }); } catch {}
-    try { await api('/admin/signout', { method: 'POST' }); } catch {}
+    try { await api('/auth/signout', { method: 'POST', expectJson: false }); } catch {}
+    try { await api('/admin/signout', { method: 'POST', expectJson: false }); } catch {}
     setUser(null);
   };
 
