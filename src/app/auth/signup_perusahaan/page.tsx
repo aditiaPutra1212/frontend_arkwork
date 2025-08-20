@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import Logo from '@/app/Images/Ungu__1_-removebg-preview.png';
-
+import { API_BASE } from '@/lib/api';
 /* --------------------------------- Config --------------------------------- */
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:4000';
 const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '';
