@@ -5,8 +5,7 @@
 export const API_BASE =
   // dukung dua nama env, pilih salah satu yang ada
   process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE ||
-  'http://localhost:4000';
+  
 
 type ApiOpts = RequestInit & {
   /** Jika diisi, otomatis method=POST dan body=JSON.stringify(json) */
