@@ -6,33 +6,28 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import Logo from '@/app/Images/Ungu__1_-removebg-preview.png';
-import { API_BASE } from '@/lib/api';
+import { API_BASE } from '@/lib/api'; // ← pakai dari lib, jangan deklar ulang
+
 /* --------------------------------- Config --------------------------------- */
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:4000';
 const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '';
-// Kalau priceId bukan URL penuh, gabungkan dengan BASE ini:
-// contoh sandbox: https://app.sandbox.midtrans.com/payment-links/
-// contoh production: https://app.midtrans.com/payment-links/
 const MIDTRANS_PAYMENT_LINK_BASE = process.env.NEXT_PUBLIC_MIDTRANS_PAYMENT_LINK_BASE ?? '';
 
 /* --------------------------------- Types --------------------------------- */
 type Step = 1 | 2 | 3 | 4 | 5;
 
-// Paket dari backend (publik)
 type Plan = {
   id: string;
-  slug: string;         // contoh: 'free' | 'starter' | 'basic' | ...
-  name: string;         // judul paket
+  slug: string;
+  name: string;
   description?: string | null;
-  amount: number;       // IDR integer
-  currency: string;     // 'IDR'
-  interval: string;     // 'month' | 'year'
+  amount: number;
+  currency: string;
+  interval: string;
   active: boolean;
 
-  // ====== tambahan agar bisa Payment Link ======
-  // backend boleh mengembalikan salah satu/begitu saja
-  paymentLinkUrl?: string | null; // URL penuh payment link (paling gampang)
-  priceId?: string | null;        // boleh diisi ID payment link ATAU langsung URL
+  // opsional untuk Payment Link
+  paymentLinkUrl?: string | null;
+  priceId?: string | null;
 };
 
 type CompanyProfile = {
@@ -94,7 +89,6 @@ function normalizeUrl(u?: string) {
   if (!v) return undefined;
   return /^https?:\/\//i.test(v) ? v : `https://${v}`;
 }
-// Map ukuran UI → enum backend CompanySize (opsional, bisa kamu perluas)
 function mapSizeToEnum(ui?: string): string | undefined {
   switch ((ui ?? '').trim()) {
     case '1-10': return 'S1_10';
@@ -128,15 +122,15 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 function getPaymentLink(plan?: Plan | null): string | null {
   if (!plan) return null;
 
-  // 1) kalau backend kirim URL full, pakai ini
+  // 1) backend kirim URL full
   if (plan.paymentLinkUrl && /^https?:\/\//i.test(plan.paymentLinkUrl)) {
     return plan.paymentLinkUrl;
   }
-  // 2) kalau priceId sudah URL (kamu boleh taruh link langsung di sini)
+  // 2) priceId sudah berupa URL penuh
   if (plan.priceId && /^https?:\/\//i.test(plan.priceId)) {
     return plan.priceId;
   }
-  // 3) kalau priceId cuma ID, gabungkan dengan BASE dari env
+  // 3) priceId hanya ID → gabungkan dengan BASE dari env
   if (plan.priceId && MIDTRANS_PAYMENT_LINK_BASE) {
     return MIDTRANS_PAYMENT_LINK_BASE.replace(/\/+$/, '') + '/' + plan.priceId.replace(/^\/+/, '');
   }
@@ -246,7 +240,6 @@ export default function Page() {
   const [plansLoading, setPlansLoading] = useState(false);
   const [selectedSlug, setSelectedSlug] = useState<string>(''); // slug dari plan
 
-  // Ambil paket publik dari backend (aktif saja)
   useEffect(() => {
     if (step !== 3) return;
     (async () => {
@@ -258,7 +251,6 @@ export default function Page() {
         const data = (await res.json()) as Plan[];
         const active = (data || []).filter(p => p.active);
         setPlans(active);
-        // default pilih paket pertama kalau belum ada pilihan
         if (!selectedSlug && active.length > 0) setSelectedSlug(active[0].slug);
       } catch (e: any) {
         setError(e?.message || 'Gagal memuat paket');
@@ -269,7 +261,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  // load Midtrans Snap hanya ketika Step 3 aktif (dipakai kalau tidak ada payment link)
+  // load Midtrans Snap script hanya ketika Step 3
   useEffect(() => {
     if (step !== 3) return;
     if (typeof window === 'undefined') return;
@@ -290,23 +282,19 @@ export default function Page() {
     if (!selectedSlug) throw new Error('Silakan pilih paket.');
 
     // 1) Simpan pilihan paket (berdasar slug)
-    await apiPost('/api/employers/step3', {
-      employerId,
-      planSlug: selectedSlug,
-    });
+    await apiPost('/api/employers/step3', { employerId, planSlug: selectedSlug });
 
-    // 2) Dapatkan plan dan cek Payment Link
+    // 2) Coba Payment Link
     const plan = plans.find(p => p.slug === selectedSlug);
     if (!plan) throw new Error('Paket tidak ditemukan.');
 
     const link = getPaymentLink(plan);
     if (link) {
-      // 3A) Kalau ada Payment Link, buka di tab baru dan lanjut step 4
       window.open(link, '_blank', 'noopener,noreferrer');
       return;
     }
 
-    // 3B) Fallback ke Snap Checkout (kalau tidak ada payment link)
+    // 3) Fallback Snap
     const res = await fetch(`${API_BASE}/api/payments/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -384,7 +372,7 @@ export default function Page() {
     });
   }
 
-  /* -------------------------------- Submit step 5 ------------------------------- */
+  /* -------------------------------- Step 5 ------------------------------- */
   async function onFinish(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     if (busy) return;
